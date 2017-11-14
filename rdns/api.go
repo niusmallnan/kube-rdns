@@ -3,19 +3,18 @@ package rdns
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 
+	"github.com/niusmallnan/kube-rdns/setting"
 	"github.com/niusmallnan/rdns-server/model"
+	"github.com/pkg/errors"
 )
 
 const (
 	contentType     = "Content-Type"
 	jsonContentType = "application/json"
-
-	BaseRequestURL = "" // http://xx.xx.xx.xx/v1
 )
 
 func jsonBody(payload interface{}) (io.Reader, error) {
@@ -57,11 +56,39 @@ func (c *Client) do(req *http.Request) (*http.Response, error) {
 			return resp, err
 		}
 		if msg, ok := data["msg"].(string); ok && msg != "" {
-			return resp, errors.New(msg)
+			return resp, errors.Errorf("Got request error: %s", msg)
 		}
 	}
 
 	return resp, nil
+}
+
+func (c *Client) ApplyDomain(fqdn string, hosts []string) error {
+	exist, err := c.ExistDomain(fqdn)
+	if err != nil {
+		return err
+	}
+
+	if exist {
+		return c.UpdateDomain(fqdn, hosts)
+	}
+
+	return c.CreateDomain(fqdn, hosts)
+}
+
+func (c *Client) ExistDomain(fqdn string) (bool, error) {
+	url := fmt.Sprintf("%s/domain/%s", c.base, fqdn)
+	req, err := c.request(http.MethodDelete, url, nil)
+	if err != nil {
+		return false, errors.Wrap(err, "GetDomain: failed to build a request")
+	}
+
+	_, err := c.do(req)
+	if err != nil {
+		return false, errors.Wrap(err, "GetDomain: failed to execute a request")
+	}
+
+	return true, nil
 }
 
 func (c *Client) CreateDomain(fqdn string, hosts []string) error {
@@ -73,12 +100,12 @@ func (c *Client) CreateDomain(fqdn string, hosts []string) error {
 
 	req, err := c.request(http.MethodPost, url, body)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "CreateDomain: failed to build a request")
 	}
 
 	_, err := c.do(req)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "CreateDomain: failed to execute a request")
 	}
 
 	return err
@@ -93,12 +120,12 @@ func (c *Client) UpdateDomain(fqdn string, hosts []string) error {
 
 	req, err := c.request(http.MethodPut, url, body)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "UpdateDomain: failed to build a request")
 	}
 
 	_, err := c.do(req)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "UpdateDomain: failed to execute a request")
 	}
 
 	return err
@@ -109,12 +136,12 @@ func (c *Client) DeleteDomain(fqdn string) error {
 
 	req, err := c.request(http.MethodDelete, url, nil)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "DeleteDomain: failed to build a request")
 	}
 
 	_, err := c.do(req)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "DeleteDomain: failed to execute a request")
 	}
 
 	return err
@@ -125,18 +152,18 @@ func (c *Client) RenewDomain(fqdn string) error {
 
 	req, err := c.request(http.MethodPut, url, nil)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "RenewDomain: failed to build a request")
 	}
 
 	_, err := c.do(req)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "RenewDomain: failed to execute a request")
 	}
 
 	return err
 }
 
-func NewClient(baseRequestURL string) *Client {
+func NewClient() *Client {
 	return &Client{c: http.DefaultClient,
-		base: baseRequestURL}
+		base: setting.GetBaseRdnsURL}
 }

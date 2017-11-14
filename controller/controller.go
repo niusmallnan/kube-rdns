@@ -1,29 +1,91 @@
 package controller
 
-import "time"
+import (
+	"time"
 
-const (
-	DEFAULT_RENEW_DURATION = "24h"
+	"github.com/niusmallnan/kube-rdns/kube"
+	"github.com/niusmallnan/kube-rdns/rdns"
+	"github.com/niusmallnan/kube-rdns/setting"
+	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
+	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/cache"
 )
 
-// RunOnce: register domains
-func RunOnce() error {
+type Controller struct {
+	kubeClient *kubernetes.Clientset
+	rdnsClient *rdns.Client
 }
 
-// RunRenewLoop: renew domains
-func RunRenewLoop(duration string) error {
-	d, err := time.ParseDuration(duration)
+func NewController(kubeClient *kubernetes.Clientset, rdnsClient *rdns.Client) *Controller {
+	return &Controller{kubeClient, rdnsClient}
+}
+
+func (c *Controller) refreshDomain() error {
+	ingNginx := kube.NewIngressNginx(c.kubeClient)
+	ips, err := ingNginx.ListNodeIPs()
 	if err != nil {
 		return err
 	}
+
+	fqdn := kube.GetRootFqdn(c.kubeClient)
+
+	return c.rdnsClient.ApplyDomain(fqdn, ips)
+}
+
+func (c *Controller) podCreated(obj interface{}) {
+	pod := obj.(*api.Pod)
+	logrus.Debugf("Controller watch Pod created: %s", pod.Name)
+	c.refreshDomain()
+}
+
+func (c *Controller) podDeleted(obj interface{}) {
+	pod := obj.(*api.Pod)
+	logrus.Debugf("Controller watch Pod delete: %s", pod.Name)
+	c.refreshDomain()
+}
+
+// RunOnce: register domains
+func (c *Controller) RunOnce() error {
+	logrus.Info("Running once for init register")
+	return c.refreshDomain()
+}
+
+// RunRenewLoop: renew domains
+func (c *Controller) RunRenewLoop() error {
+	logrus.Info("Running renew loop")
+	d, err := time.ParseDuration(setting.GetRenewDuration())
+	if err != nil {
+		return errors.Wrap(err, "Failed to parse duration")
+	}
 	ticker := time.NewTicker(d)
 	for t := range ticker.C {
-
+		fqdn := kube.GetRootFqdn(c.kubeClient)
+		err = c.rdnsClient.RenewDomain(fqdn)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
 // WatchUpdate: watch the update about the ingress controllers
-func WatchUpdate() error {
+func (c *Controller) WatchUpdate() {
+	logrus.Info("Running watch update")
 
+	resyncPeriod := 60 * time.Second
+	// create the pod watcher
+	podListWatcher := cache.NewListWatchFromClient(c.kubeClient, "pods", kube.NamespaceIngressNginx, fields.Everything())
+
+	_, wc := cache.NewInformer(podListWatcher,
+		&api.Pod{},
+		resyncPeriod,
+		framework.ResourceEventHandlerFuncs{
+			AddFunc:    c.podCreated,
+			DeleteFunc: c.podDeleted,
+		})
+
+	go wc.Run(wait.NeverStop)
 }

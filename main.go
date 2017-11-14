@@ -4,8 +4,9 @@ import (
 	"os"
 
 	"github.com/niusmallnan/kube-rdns/controller"
+	"github.com/niusmallnan/kube-rdns/kube"
 	"github.com/niusmallnan/kube-rdns/rdns"
-	"github.com/niusmallnan/kube-rdns/source"
+	"github.com/niusmallnan/kube-rdns/setting"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 )
@@ -23,18 +24,18 @@ func main() {
 			EnvVar: "RANCHER_DEBUG",
 		},
 		cli.StringFlag{
-			Name:   "base-url",
-			Value:  rdns.BaseRequestURL,
-			EnvVar: "RANCHER_BASE_URL",
+			Name:   "root-domain",
+			Value:  setting.DefaultRootDomain,
+			EnvVar: "RANCHER_ROOT_DOMAIN",
 		},
 		cli.StringFlag{
-			Name:   "ingress-nginx-namespace",
-			Value:  source.INGRESS_NGINX_NS,
-			EnvVar: "RANCHER_INGRESS_NGINX_NS",
+			Name:   "base-rdns-url",
+			Value:  setting.DefaultBaseRdnsURL,
+			EnvVar: "RANCHER_BASE_RDNS_URL",
 		},
 		cli.StringFlag{
 			Name:   "renew-duration",
-			Value:  controller.DEFAULT_RENEW_DURATION,
+			Value:  setting.DefaultRnewDuration,
 			EnvVar: "RANCHER_RENEW_DURATIONL",
 		},
 	}
@@ -53,21 +54,23 @@ func appMain(ctx *cli.Context) error {
 		logrus.SetLevel(logrus.DebugLevel)
 	}
 
-	rdnsClient := rdns.NewClient(ctx.String("base-url"))
+	setting.Init(ctx)
+
+	kubeClient := kube.NewClient()
+	rdnsClient := rdns.NewClient()
+	c := controller.NewController(kubeClient, rdnsClient)
 
 	done := make(chan error)
 
 	go func() {
-		done <- controller.RunOnce()
+		done <- c.RunOnce()
 	}()
 
 	go func() {
-		done <- controller.RunRenewLoop(ctx.String("renew-duration"))
+		done <- c.RunRenewLoop()
 	}()
 
-	go func() {
-		done <- controller.WatchUpdate()
-	}()
+	c.WatchUpdate()
 
 	return <-done
 }
