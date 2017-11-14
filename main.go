@@ -56,7 +56,10 @@ func appMain(ctx *cli.Context) error {
 
 	setting.Init(ctx)
 
-	kubeClient := kube.NewClient()
+	kubeClient, err := kube.NewClient()
+	if err != nil {
+		return err
+	}
 	rdnsClient := rdns.NewClient()
 	c := controller.NewController(kubeClient, rdnsClient)
 

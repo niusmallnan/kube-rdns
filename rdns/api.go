@@ -27,8 +27,8 @@ func jsonBody(payload interface{}) (io.Reader, error) {
 }
 
 type Client struct {
-	c    *http.Client
-	base string
+	httpClient *http.Client
+	base       string
 }
 
 func (c *Client) request(method string, url string, body io.Reader) (*http.Request, error) {
@@ -42,7 +42,7 @@ func (c *Client) request(method string, url string, body io.Reader) (*http.Reque
 }
 
 func (c *Client) do(req *http.Request) (*http.Response, error) {
-	resp, err := s.httpClient.Do(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return resp, err
 	}
@@ -50,8 +50,8 @@ func (c *Client) do(req *http.Request) (*http.Response, error) {
 	defer resp.Body.Close()
 
 	if code := resp.StatusCode; code < 200 || code > 300 {
-		var dat map[string]interface{}
-		err := json.NewDecoder(resp.Body).Decode(dat)
+		var data map[string]interface{}
+		err := json.NewDecoder(resp.Body).Decode(data)
 		if err != nil {
 			return resp, err
 		}
@@ -83,7 +83,7 @@ func (c *Client) ExistDomain(fqdn string) (bool, error) {
 		return false, errors.Wrap(err, "GetDomain: failed to build a request")
 	}
 
-	_, err := c.do(req)
+	_, err = c.do(req)
 	if err != nil {
 		return false, errors.Wrap(err, "GetDomain: failed to execute a request")
 	}
@@ -103,7 +103,7 @@ func (c *Client) CreateDomain(fqdn string, hosts []string) error {
 		return errors.Wrap(err, "CreateDomain: failed to build a request")
 	}
 
-	_, err := c.do(req)
+	_, err = c.do(req)
 	if err != nil {
 		return errors.Wrap(err, "CreateDomain: failed to execute a request")
 	}
@@ -123,7 +123,7 @@ func (c *Client) UpdateDomain(fqdn string, hosts []string) error {
 		return errors.Wrap(err, "UpdateDomain: failed to build a request")
 	}
 
-	_, err := c.do(req)
+	_, err = c.do(req)
 	if err != nil {
 		return errors.Wrap(err, "UpdateDomain: failed to execute a request")
 	}
@@ -139,7 +139,7 @@ func (c *Client) DeleteDomain(fqdn string) error {
 		return errors.Wrap(err, "DeleteDomain: failed to build a request")
 	}
 
-	_, err := c.do(req)
+	_, err = c.do(req)
 	if err != nil {
 		return errors.Wrap(err, "DeleteDomain: failed to execute a request")
 	}
@@ -155,7 +155,7 @@ func (c *Client) RenewDomain(fqdn string) error {
 		return errors.Wrap(err, "RenewDomain: failed to build a request")
 	}
 
-	_, err := c.do(req)
+	_, err = c.do(req)
 	if err != nil {
 		return errors.Wrap(err, "RenewDomain: failed to execute a request")
 	}
@@ -164,6 +164,6 @@ func (c *Client) RenewDomain(fqdn string) error {
 }
 
 func NewClient() *Client {
-	return &Client{c: http.DefaultClient,
-		base: setting.GetBaseRdnsURL}
+	return &Client{httpClient: http.DefaultClient,
+		base: setting.GetBaseRdnsURL()}
 }

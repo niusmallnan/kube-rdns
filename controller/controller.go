@@ -8,6 +8,7 @@ import (
 	"github.com/niusmallnan/kube-rdns/setting"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
@@ -36,24 +37,22 @@ func (c *Controller) refreshDomain() error {
 }
 
 func (c *Controller) podCreated(obj interface{}) {
-	pod := obj.(*api.Pod)
+	pod := obj.(*v1.Pod)
 	logrus.Debugf("Controller watch Pod created: %s", pod.Name)
 	c.refreshDomain()
 }
 
 func (c *Controller) podDeleted(obj interface{}) {
-	pod := obj.(*api.Pod)
+	pod := obj.(*v1.Pod)
 	logrus.Debugf("Controller watch Pod delete: %s", pod.Name)
 	c.refreshDomain()
 }
 
-// RunOnce: register domains
 func (c *Controller) RunOnce() error {
 	logrus.Info("Running once for init register")
 	return c.refreshDomain()
 }
 
-// RunRenewLoop: renew domains
 func (c *Controller) RunRenewLoop() error {
 	logrus.Info("Running renew loop")
 	d, err := time.ParseDuration(setting.GetRenewDuration())
@@ -62,6 +61,7 @@ func (c *Controller) RunRenewLoop() error {
 	}
 	ticker := time.NewTicker(d)
 	for t := range ticker.C {
+		logrus.Infof("Tick at %s", t.String())
 		fqdn := kube.GetRootFqdn(c.kubeClient)
 		err = c.rdnsClient.RenewDomain(fqdn)
 		if err != nil {
@@ -71,18 +71,17 @@ func (c *Controller) RunRenewLoop() error {
 	return nil
 }
 
-// WatchUpdate: watch the update about the ingress controllers
 func (c *Controller) WatchUpdate() {
 	logrus.Info("Running watch update")
 
 	resyncPeriod := 60 * time.Second
 	// create the pod watcher
-	podListWatcher := cache.NewListWatchFromClient(c.kubeClient, "pods", kube.NamespaceIngressNginx, fields.Everything())
+	podListWatcher := cache.NewListWatchFromClient(c.kubeClient.CoreV1().RESTClient(), "pods", kube.NamespaceIngressNginx, fields.Everything())
 
 	_, wc := cache.NewInformer(podListWatcher,
-		&api.Pod{},
+		&v1.Pod{},
 		resyncPeriod,
-		framework.ResourceEventHandlerFuncs{
+		cache.ResourceEventHandlerFuncs{
 			AddFunc:    c.podCreated,
 			DeleteFunc: c.podDeleted,
 		})

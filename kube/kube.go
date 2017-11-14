@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/niusmallnan/kube-rdns/setting"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -24,7 +25,7 @@ func NewClient() (*kubernetes.Clientset, error) {
 	// creates the in-cluster config
 	config, err := rest.InClusterConfig()
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "Failed to init kube client")
 	}
 	// creates the clientset
 	clientset, err := kubernetes.NewForConfig(config)

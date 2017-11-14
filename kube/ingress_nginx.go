@@ -20,7 +20,7 @@ func (n *IngressNginx) ListNodeIPs() (ips []string, err error) {
 		return ips, errors.Wrap(err, "Failed to list pods")
 	}
 
-	for _, p := range pods.Items() {
+	for _, p := range pods.Items {
 		if _, ok := p.Annotations[AnnotationManagedByRDNS]; ok {
 			ips = append(ips, p.Status.HostIP)
 		}
