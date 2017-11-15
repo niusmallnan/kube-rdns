@@ -42,7 +42,7 @@ func main() {
 		cli.StringFlag{
 			Name:   "renew-duration",
 			Value:  setting.DefaultRnewDuration,
-			EnvVar: "RANCHER_RENEW_DURATIONL",
+			EnvVar: "RANCHER_RENEW_DURATION",
 		},
 	}
 	app.Action = func(ctx *cli.Context) {
