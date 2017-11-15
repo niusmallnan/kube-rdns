@@ -4,6 +4,7 @@ import (
 	"os"
 
 	"github.com/niusmallnan/kube-rdns/controller"
+	"github.com/niusmallnan/kube-rdns/healthcheck"
 	"github.com/niusmallnan/kube-rdns/kube"
 	"github.com/niusmallnan/kube-rdns/rdns"
 	"github.com/niusmallnan/kube-rdns/setting"
@@ -22,6 +23,11 @@ func main() {
 		cli.BoolFlag{
 			Name:   "debug, d",
 			EnvVar: "RANCHER_DEBUG",
+		},
+		cli.StringFlag{
+			Name:   "listen",
+			Value:  ":9595",
+			EnvVar: "RANCHER_SERVER_LISTEN",
 		},
 		cli.StringFlag{
 			Name:   "root-domain",
@@ -64,6 +70,10 @@ func appMain(ctx *cli.Context) error {
 	c := controller.NewController(kubeClient, rdnsClient)
 
 	done := make(chan error)
+
+	go func() {
+		done <- healthcheck.StartHealthCheck(ctx.String("listen"))
+	}()
 
 	go func() {
 		done <- c.RunOnce()

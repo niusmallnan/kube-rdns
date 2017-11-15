@@ -4,7 +4,7 @@ import "github.com/urfave/cli"
 
 const (
 	DefaultRootDomain   = "rancher.io"
-	DefaultBaseRdnsURL  = "https://api.rdns.racher.io/v1"
+	DefaultBaseRdnsURL  = "https://api.rdns.rancher.io/v1"
 	DefaultRnewDuration = "24h"
 )
 

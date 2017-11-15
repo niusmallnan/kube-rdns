@@ -17,8 +17,8 @@ const (
 	NamespaceIngressNginx  = "ingress-nginx"
 	NamespaceSaveClusterID = "kube-system"
 
-	ConfigMapClusterInfo      = "cluser-info"
-	ConfigMapClusterInfoIDKey = "cluser-id"
+	ConfigMapClusterInfo      = "cluster-info"
+	ConfigMapClusterInfoIDKey = "cluster-id"
 )
 
 func NewClient() (*kubernetes.Clientset, error) {
