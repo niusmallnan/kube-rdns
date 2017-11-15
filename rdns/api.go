@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 
 	"github.com/niusmallnan/kube-rdns/setting"
 	"github.com/niusmallnan/rdns-server/model"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -41,26 +43,32 @@ func (c *Client) request(method string, url string, body io.Reader) (*http.Reque
 	return req, nil
 }
 
-func (c *Client) do(req *http.Request) (*http.Response, error) {
+func (c *Client) do(req *http.Request) (model.Response, error) {
+	var data model.Response
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return resp, err
+		return data, err
 	}
 	// when err is nil, resp contains a non-nil resp.Body which must be closed
 	defer resp.Body.Close()
 
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return data, errors.Wrap(err, "Read response body error")
+	}
+
+	err = json.Unmarshal(body, &data)
+	if err != nil {
+		return data, errors.Wrap(err, "Decode response error")
+	}
+	logrus.Infof("Got response entry: %+v", data)
 	if code := resp.StatusCode; code < 200 || code > 300 {
-		var data map[string]interface{}
-		err := json.NewDecoder(resp.Body).Decode(data)
-		if err != nil {
-			return resp, err
-		}
-		if msg, ok := data["msg"].(string); ok && msg != "" {
-			return resp, errors.Errorf("Got request error: %s", msg)
+		if data.Message != "" {
+			return data, errors.Errorf("Got request error: %s", data.Message)
 		}
 	}
 
-	return resp, nil
+	return data, nil
 }
 
 func (c *Client) ApplyDomain(fqdn string, hosts []string) error {
@@ -70,22 +78,28 @@ func (c *Client) ApplyDomain(fqdn string, hosts []string) error {
 	}
 
 	if exist {
+		logrus.Infof("Fqdn %s has been exist", fqdn)
 		return c.UpdateDomain(fqdn, hosts)
 	}
 
+	logrus.Infof("Fqdn %s has not been exist, need to create a new one", fqdn)
 	return c.CreateDomain(fqdn, hosts)
 }
 
 func (c *Client) ExistDomain(fqdn string) (bool, error) {
 	url := fmt.Sprintf("%s/domain/%s", c.base, fqdn)
-	req, err := c.request(http.MethodDelete, url, nil)
+	req, err := c.request(http.MethodGet, url, nil)
 	if err != nil {
 		return false, errors.Wrap(err, "GetDomain: failed to build a request")
 	}
 
-	_, err = c.do(req)
+	o, err := c.do(req)
 	if err != nil {
 		return false, errors.Wrap(err, "GetDomain: failed to execute a request")
+	}
+
+	if o.Data.Fqdn == "" {
+		return false, nil
 	}
 
 	return true, nil

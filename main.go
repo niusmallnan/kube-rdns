@@ -45,13 +45,7 @@ func main() {
 			EnvVar: "RANCHER_RENEW_DURATION",
 		},
 	}
-	app.Action = func(ctx *cli.Context) {
-		if err := appMain(ctx); err != nil {
-			logrus.Errorf("error: %v", err)
-			os.Exit(1)
-		}
-	}
-
+	app.Action = appMain
 	app.Run(os.Args)
 }
 
@@ -71,19 +65,21 @@ func appMain(ctx *cli.Context) error {
 
 	done := make(chan error)
 
-	go func() {
+	go func(done chan<- error) {
 		done <- healthcheck.StartHealthCheck(ctx.String("listen"))
-	}()
+	}(done)
 
-	go func() {
+	go func(done chan<- error) {
 		done <- c.RunOnce()
-	}()
+	}(done)
 
-	go func() {
+	go func(done chan<- error) {
 		done <- c.RunRenewLoop()
-	}()
+	}(done)
 
 	c.WatchUpdate()
 
-	return <-done
+	err = <-done
+	logrus.Errorf("Exiting kube-rdns with error: %v", err)
+	return err
 }

@@ -32,6 +32,7 @@ func (c *Controller) refreshDomain() error {
 	}
 
 	fqdn := kube.GetRootFqdn(c.kubeClient)
+	logrus.Infof("Got the fqdn: %s, and host ips: %s", fqdn, ips)
 
 	return c.rdnsClient.ApplyDomain(fqdn, ips)
 }
