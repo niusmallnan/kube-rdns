@@ -7,6 +7,8 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"reflect"
+	"sort"
 
 	"github.com/niusmallnan/kube-rdns/setting"
 	"github.com/niusmallnan/rdns-server/model"
@@ -72,37 +74,39 @@ func (c *Client) do(req *http.Request) (model.Response, error) {
 }
 
 func (c *Client) ApplyDomain(fqdn string, hosts []string) error {
-	exist, err := c.ExistDomain(fqdn)
+	d, err := c.GetDomain(fqdn)
 	if err != nil {
 		return err
 	}
 
-	if exist {
-		logrus.Infof("Fqdn %s has been exist", fqdn)
+	if d.Fqdn == "" {
+		logrus.Debugf("Fqdn %s has not been exist, need to create a new one", fqdn)
+		return c.CreateDomain(fqdn, hosts)
+	}
+
+	sort.Strings(d.Hosts)
+	sort.Strings(hosts)
+	if !reflect.DeepEqual(d.Hosts, hosts) {
+		logrus.Debugf("Fqdn %s has been exist, need to update", fqdn)
 		return c.UpdateDomain(fqdn, hosts)
 	}
 
-	logrus.Infof("Fqdn %s has not been exist, need to create a new one", fqdn)
-	return c.CreateDomain(fqdn, hosts)
+	return nil
 }
 
-func (c *Client) ExistDomain(fqdn string) (bool, error) {
+func (c *Client) GetDomain(fqdn string) (d model.Domain, err error) {
 	url := fmt.Sprintf("%s/domain/%s", c.base, fqdn)
 	req, err := c.request(http.MethodGet, url, nil)
 	if err != nil {
-		return false, errors.Wrap(err, "GetDomain: failed to build a request")
+		return d, errors.Wrap(err, "GetDomain: failed to build a request")
 	}
 
 	o, err := c.do(req)
 	if err != nil {
-		return false, errors.Wrap(err, "GetDomain: failed to execute a request")
+		return d, errors.Wrap(err, "GetDomain: failed to execute a request")
 	}
 
-	if o.Data.Fqdn == "" {
-		return false, nil
-	}
-
-	return true, nil
+	return o.Data, nil
 }
 
 func (c *Client) CreateDomain(fqdn string, hosts []string) error {

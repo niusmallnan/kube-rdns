@@ -17,6 +17,8 @@ const (
 	NamespaceIngressNginx  = "ingress-nginx"
 	NamespaceSaveClusterID = "kube-system"
 
+	DeploymentIngressNginxControllerName = "nginx-ingress-controller"
+
 	ConfigMapClusterInfo      = "cluster-info"
 	ConfigMapClusterInfoIDKey = "cluster-id"
 )

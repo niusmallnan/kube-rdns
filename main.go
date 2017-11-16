@@ -63,6 +63,12 @@ func appMain(ctx *cli.Context) error {
 	rdnsClient := rdns.NewClient()
 	c := controller.NewController(kubeClient, rdnsClient)
 
+	err = c.RunOnce()
+	if err != nil {
+		logrus.Errorf("Failed to init register rdns: %v", err)
+		return err
+	}
+
 	done := make(chan error)
 
 	go func(done chan<- error) {
@@ -70,14 +76,10 @@ func appMain(ctx *cli.Context) error {
 	}(done)
 
 	go func(done chan<- error) {
-		done <- c.RunOnce()
-	}(done)
-
-	go func(done chan<- error) {
 		done <- c.RunRenewLoop()
 	}(done)
 
-	c.WatchUpdate()
+	c.WatchNginxControllerUpdate()
 
 	err = <-done
 	logrus.Errorf("Exiting kube-rdns with error: %v", err)
