@@ -20,8 +20,8 @@ type Controller struct {
 }
 
 func NewController(kubeClient *kubernetes.Clientset, rdnsClient *rdns.Client) *Controller {
-	ingNginx := kube.NewIngressNginx(c.kubeClient)
-	ingRes := kube.NewIngressResource(c.kubeClient)
+	ingNginx := kube.NewIngressNginx(kubeClient)
+	ingRes := kube.NewIngressResource(kubeClient)
 	return &Controller{kubeClient, rdnsClient, ingNginx, ingRes}
 }
 

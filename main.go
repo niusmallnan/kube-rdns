@@ -83,6 +83,10 @@ func appMain(ctx *cli.Context) error {
 		done <- c.WatchNginxControllerUpdate()
 	}(done)
 
+	go func(done chan<- error) {
+		done <- c.WatchIngressResource()
+	}(done)
+
 	err = <-done
 	logrus.Errorf("Exiting kube-rdns with error: %v", err)
 	return err
