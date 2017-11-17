@@ -2,6 +2,7 @@ package kube
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/niusmallnan/kube-rdns/setting"
 	"github.com/pkg/errors"
@@ -13,6 +14,7 @@ import (
 
 const (
 	AnnotationManagedByRDNS = "rdns.rancher.io/managed"
+	AnnotationHostname      = "rdns.rancher.io/hostname"
 
 	NamespaceIngressNginx  = "ingress-nginx"
 	NamespaceSaveClusterID = "kube-system"
@@ -21,6 +23,8 @@ const (
 
 	ConfigMapClusterInfo      = "cluster-info"
 	ConfigMapClusterInfoIDKey = "cluster-id"
+
+	watchResyncPeriod = 60 * time.Second
 )
 
 func NewClient() (*kubernetes.Clientset, error) {
