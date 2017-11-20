@@ -30,7 +30,7 @@ const (
 
 	NIPRootDomain = "nip.io"
 
-	watchResyncPeriod = 60 * time.Second
+	watchIngressResourceResyncDuration = 60 * time.Second
 )
 
 func NewClient() (*kubernetes.Clientset, error) {

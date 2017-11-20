@@ -87,9 +87,10 @@ func (c *Client) ApplyDomain(fqdn string, hosts []string) error {
 	sort.Strings(d.Hosts)
 	sort.Strings(hosts)
 	if !reflect.DeepEqual(d.Hosts, hosts) {
-		logrus.Debugf("Fqdn %s has been exist, need to update", fqdn)
+		logrus.Debugf("Fqdn %s has some changes, need to update", fqdn)
 		return c.UpdateDomain(fqdn, hosts)
 	}
+	logrus.Debugf("Fqdn %s has no changes, no need to update", fqdn)
 
 	return nil
 }

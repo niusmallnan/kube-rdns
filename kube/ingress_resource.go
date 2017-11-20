@@ -68,7 +68,7 @@ func (n *IngressResource) WatchEvents() {
 
 	_, wc := cache.NewInformer(watcher,
 		&extensions_v1beta1.Ingress{},
-		watchResyncPeriod,
+		watchIngressResourceResyncDuration,
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
 				addIng := obj.(*extensions_v1beta1.Ingress)

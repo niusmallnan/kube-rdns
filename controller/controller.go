@@ -8,7 +8,6 @@ import (
 	"github.com/niusmallnan/kube-rdns/setting"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	apps_v1beta1 "k8s.io/api/apps/v1beta1"
 	"k8s.io/client-go/kubernetes"
 )
 
@@ -20,7 +19,7 @@ type Controller struct {
 }
 
 func NewController(kubeClient *kubernetes.Clientset, rdnsClient *rdns.Client) *Controller {
-	ingNginx := kube.NewIngressNginx(kubeClient)
+	ingNginx := kube.NewIngressNginx(kubeClient, rdnsClient)
 	ingRes := kube.NewIngressResource(kubeClient)
 	return &Controller{kubeClient, rdnsClient, ingNginx, ingRes}
 }
@@ -35,14 +34,6 @@ func (c *Controller) refreshDomain() error {
 	logrus.Infof("Got the fqdn: %s, and host ips: %s", fqdn, ips)
 
 	return c.rdnsClient.ApplyDomain(fqdn, ips)
-}
-
-func (c *Controller) deployUpdated(oldObj, newObj interface{}) {
-	deploy := newObj.(*apps_v1beta1.Deployment)
-	if _, ok := deploy.Annotations[kube.AnnotationManagedByRDNS]; ok {
-		logrus.Debugf("Controller watch deployment updated: %s", deploy.Name)
-		c.refreshDomain()
-	}
 }
 
 func (c *Controller) RunOnce() error {
@@ -71,7 +62,7 @@ func (c *Controller) RunRenewLoop() error {
 
 func (c *Controller) WatchNginxControllerUpdate() error {
 	logrus.Info("Running watch the nginx controller update")
-	c.ingNginx.WatchControllerUpdate(c.deployUpdated)
+	c.ingNginx.WatchControllerUpdate()
 	logrus.Info("Stopping watch the nginx controller update")
 	return errors.New("Runtime error on WatchNginxControllerUpdate")
 }

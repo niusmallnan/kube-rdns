@@ -44,8 +44,18 @@ func main() {
 			Value:  setting.DefaultRnewDuration,
 			EnvVar: "RANCHER_RENEW_DURATION",
 		},
+		cli.StringFlag{
+			Name:   "ingress-controller-resync-duration",
+			Value:  setting.DefaultIngressControllerResyncDuration,
+			EnvVar: "RANCHER_INGRESS_CONTROLLER_RESYNC_DURATION",
+		},
 	}
-	app.Action = appMain
+	app.Action = func(ctx *cli.Context) {
+		if err := appMain(ctx); err != nil {
+			logrus.Errorf("Exiting kube-rdns with error: %v", err)
+			os.Exit(1)
+		}
+	}
 	app.Run(os.Args)
 }
 
@@ -54,7 +64,10 @@ func appMain(ctx *cli.Context) error {
 		logrus.SetLevel(logrus.DebugLevel)
 	}
 
-	setting.Init(ctx)
+	err := setting.Init(ctx)
+	if err != nil {
+		return err
+	}
 
 	kubeClient, err := kube.NewClient()
 	if err != nil {
@@ -75,9 +88,9 @@ func appMain(ctx *cli.Context) error {
 		done <- healthcheck.StartHealthCheck(ctx.String("listen"))
 	}(done)
 
-	go func(done chan<- error) {
-		done <- c.RunRenewLoop()
-	}(done)
+	//go func(done chan<- error) {
+	//done <- c.RunRenewLoop()
+	//}(done)
 
 	go func(done chan<- error) {
 		done <- c.WatchNginxControllerUpdate()
@@ -87,7 +100,5 @@ func appMain(ctx *cli.Context) error {
 		done <- c.WatchIngressResource()
 	}(done)
 
-	err = <-done
-	logrus.Errorf("Exiting kube-rdns with error: %v", err)
-	return err
+	return <-done
 }
