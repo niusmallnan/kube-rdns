@@ -1,6 +1,8 @@
 package kube
 
 import (
+	"fmt"
+
 	"github.com/sirupsen/logrus"
 	"k8s.io/api/core/v1"
 	extensions_v1beta1 "k8s.io/api/extensions/v1beta1"
@@ -27,8 +29,36 @@ func (n *IngressResource) ignore(ing *extensions_v1beta1.Ingress) bool {
 	return ok
 }
 
-func (n *IngressResource) updateHostname(ing *extensions_v1beta1.Ingress) {
+func (n *IngressResource) getRdnsHostname(ing *extensions_v1beta1.Ingress) string {
+	rootFqdn := GetRootFqdn(n.kubeClient)
+	return fmt.Sprintf("%s.%s.%s", ing.Name, ing.Namespace, rootFqdn)
+}
 
+func (n *IngressResource) getNIPHostname(ing *extensions_v1beta1.Ingress) string {
+	for _, i := range ing.Status.LoadBalancer.Ingress {
+		if i.IP != "" {
+			return fmt.Sprintf("%s.%s.%s.%s", ing.Name, ing.Namespace, i.IP, NIPRootDomain)
+		}
+	}
+	logrus.Warnf("Failed to get ingress /%s/%s resource IP address", ing.Namespace, ing.Name)
+	return ""
+}
+
+func (n *IngressResource) updateHostname(ing *extensions_v1beta1.Ingress) {
+	if ing.Annotations == nil {
+		ing.Annotations = make(map[string]string)
+	}
+	switch ing.Annotations[AnnotationIngressClass] {
+	case "": // nginx as default
+		fallthrough
+	case IngressClassNginx:
+		ing.Annotations[AnnotationHostname] = n.getRdnsHostname(ing)
+	case IngressClassGCE:
+		ing.Annotations[AnnotationHostname] = n.getNIPHostname(ing)
+	}
+	if _, err := n.kubeClient.ExtensionsV1beta1().Ingresses(ing.Namespace).Update(ing); err != nil {
+		logrus.Errorf("Failed to update ingress resource annotations: %v", err)
+	}
 }
 
 func (n *IngressResource) WatchEvents() {
@@ -55,9 +85,10 @@ func (n *IngressResource) WatchEvents() {
 			if quit {
 				return
 			}
-			logrus.Debugf("Ingress resource: begin processing %v", item)
-			n.updateHostname(item.(*extensions_v1beta1.Ingress))
-			logrus.Debugf("Ingress resource: done processing %v", item)
+			ing := item.(*extensions_v1beta1.Ingress)
+			logrus.Debugf("Ingress resource /%s/%s: begin processing", ing.Namespace, ing.Name)
+			n.updateHostname(ing)
+			logrus.Debugf("Ingress resource /%s/%s: done processing", ing.Namespace, ing.Name)
 			n.queue.Done(item)
 		}
 	}()

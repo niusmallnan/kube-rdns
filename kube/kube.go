@@ -15,6 +15,7 @@ import (
 const (
 	AnnotationManagedByRDNS = "rdns.rancher.io/managed"
 	AnnotationHostname      = "rdns.rancher.io/hostname"
+	AnnotationIngressClass  = "kubernetes.io/ingress.class"
 
 	NamespaceIngressNginx  = "ingress-nginx"
 	NamespaceSaveClusterID = "kube-system"
@@ -23,6 +24,11 @@ const (
 
 	ConfigMapClusterInfo      = "cluster-info"
 	ConfigMapClusterInfoIDKey = "cluster-id"
+
+	IngressClassNginx = "nginx"
+	IngressClassGCE   = "gce"
+
+	NIPRootDomain = "nip.io"
 
 	watchResyncPeriod = 60 * time.Second
 )
@@ -51,7 +57,7 @@ func GetClusterID(client *kubernetes.Clientset) string {
 		logrus.Fatalf("Failed to get cluster id from configmap %s", ConfigMapClusterInfo)
 	}
 
-	logrus.Infof("Got cluster id: %s", id)
+	logrus.Debugf("Got cluster id: %s", id)
 	return id
 }
 
