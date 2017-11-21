@@ -16,6 +16,7 @@ const (
 	AnnotationManagedByRDNS = "rdns.rancher.io/managed"
 	AnnotationHostname      = "rdns.rancher.io/hostname"
 	AnnotationIngressClass  = "kubernetes.io/ingress.class"
+	AnnotationNodePublicIP  = "rdns.rancher.io/public-ip"
 
 	NamespaceIngressNginx  = "ingress-nginx"
 	NamespaceSaveClusterID = "kube-system"

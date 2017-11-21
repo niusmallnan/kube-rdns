@@ -23,6 +23,14 @@ func NewIngressNginx(kubeClient *kubernetes.Clientset, rdnsClient *rdns.Client) 
 	return &IngressNginx{kubeClient, rdnsClient, stop}
 }
 
+func (n *IngressNginx) getNodePublicIP(nodeName string) (string, error) {
+	node, err := n.kubeClient.CoreV1().Nodes().Get(nodeName, meta_v1.GetOptions{})
+	if err != nil {
+		return "", errors.Wrapf(err, "Failed to get node %s", nodeName)
+	}
+	return node.Annotations[AnnotationNodePublicIP], nil
+}
+
 func (n *IngressNginx) ListNodeIPs() (ips []string, err error) {
 	pods, err := n.kubeClient.CoreV1().Pods(NamespaceIngressNginx).List(meta_v1.ListOptions{})
 	if err != nil {
@@ -30,8 +38,16 @@ func (n *IngressNginx) ListNodeIPs() (ips []string, err error) {
 	}
 
 	for _, p := range pods.Items {
-		if _, ok := p.Annotations[AnnotationManagedByRDNS]; ok && p.Status.HostIP != "" {
-			ips = append(ips, p.Status.HostIP)
+		nodePublicIP, err := n.getNodePublicIP(p.Spec.NodeName)
+		if err != nil {
+			return ips, err
+		}
+		if nodePublicIP != "" {
+			ips = append(ips, nodePublicIP)
+		} else {
+			if _, ok := p.Annotations[AnnotationManagedByRDNS]; ok && p.Status.HostIP != "" {
+				ips = append(ips, p.Status.HostIP)
+			}
 		}
 	}
 
