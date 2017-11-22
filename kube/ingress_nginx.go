@@ -8,6 +8,7 @@ import (
 	apps_v1beta1 "k8s.io/api/apps/v1beta1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 )
@@ -32,22 +33,26 @@ func (n *IngressNginx) getNodePublicIP(nodeName string) (string, error) {
 }
 
 func (n *IngressNginx) ListNodeIPs() (ips []string, err error) {
-	pods, err := n.kubeClient.CoreV1().Pods(NamespaceIngressNginx).List(meta_v1.ListOptions{})
+	options := meta_v1.ListOptions{LabelSelector: labels.SelectorFromSet(labels.Set{"app": PodNginxControllerLabel}).String()}
+	pods, err := n.kubeClient.CoreV1().Pods(NamespaceIngressNginx).List(options)
 	if err != nil {
 		return ips, errors.Wrap(err, "Failed to list pods")
 	}
 
 	for _, p := range pods.Items {
+		if p.Annotations == nil || p.Annotations[AnnotationManagedByRDNS] != "true" {
+			logrus.Debugf("ListNodeIPs: skip pod /%s/%s", p.Namespace, p.Name)
+			continue
+		}
+
 		nodePublicIP, err := n.getNodePublicIP(p.Spec.NodeName)
 		if err != nil {
 			return ips, err
 		}
 		if nodePublicIP != "" {
 			ips = append(ips, nodePublicIP)
-		} else {
-			if _, ok := p.Annotations[AnnotationManagedByRDNS]; ok && p.Status.HostIP != "" {
-				ips = append(ips, p.Status.HostIP)
-			}
+		} else if p.Status.HostIP != "" {
+			ips = append(ips, p.Status.HostIP)
 		}
 	}
 
@@ -65,7 +70,7 @@ func (n *IngressNginx) WatchControllerUpdate() {
 		cache.ResourceEventHandlerFuncs{
 			UpdateFunc: func(oldObj, newObj interface{}) {
 				deploy := newObj.(*apps_v1beta1.Deployment)
-				if _, ok := deploy.Annotations[AnnotationManagedByRDNS]; ok {
+				if deploy.Annotations != nil && deploy.Annotations[AnnotationManagedByRDNS] == "true" {
 					logrus.Debugf("Controller watch deployment updated: %s", deploy.Name)
 
 					ips, err := n.ListNodeIPs()

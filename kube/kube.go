@@ -23,6 +23,8 @@ const (
 
 	DeploymentIngressNginxControllerName = "nginx-ingress-controller"
 
+	PodNginxControllerLabel = "ingress-nginx"
+
 	ConfigMapClusterInfo      = "cluster-info"
 	ConfigMapClusterInfoIDKey = "cluster-id"
 
