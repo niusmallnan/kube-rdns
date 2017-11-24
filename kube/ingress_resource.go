@@ -28,8 +28,10 @@ func (n *IngressResource) ignore(ing *extensions_v1beta1.Ingress) bool {
 	if ing.Annotations == nil {
 		return false
 	}
-	_, ok := ing.Annotations[AnnotationHostname]
-	return ok
+	if ing.Annotations[AnnotationHostname] == "" {
+		return false
+	}
+	return true
 }
 
 func (n *IngressResource) getRdnsHostname(ing *extensions_v1beta1.Ingress) string {
@@ -88,10 +90,18 @@ func (n *IngressResource) WatchEvents() {
 			AddFunc: func(obj interface{}) {
 				addIng := obj.(*extensions_v1beta1.Ingress)
 				if !n.ignore(addIng) {
-					logrus.Infof("Create ingress /%s/%s", addIng.Namespace, addIng.Name)
+					logrus.Infof("Created ingress /%s/%s", addIng.Namespace, addIng.Name)
 					n.queue.Add(addIng)
 				}
-			}})
+			},
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				newIng := newObj.(*extensions_v1beta1.Ingress)
+				if !n.ignore(newIng) {
+					logrus.Infof("Updated ingress /%s/%s", newIng.Namespace, newIng.Name)
+					n.queue.Add(newIng)
+				}
+			},
+		})
 	go wc.Run(n.stop)
 
 	go func() {
