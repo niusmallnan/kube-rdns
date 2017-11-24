@@ -30,6 +30,7 @@ const (
 
 	IngressClassNginx = "nginx"
 	IngressClassGCE   = "gce"
+	IngressClassALB   = "alb"
 
 	NIPRootDomain = "nip.io"
 

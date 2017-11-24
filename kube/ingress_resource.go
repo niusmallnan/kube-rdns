@@ -25,6 +25,9 @@ func NewIngressResource(kubeClient *kubernetes.Clientset) *IngressResource {
 }
 
 func (n *IngressResource) ignore(ing *extensions_v1beta1.Ingress) bool {
+	if ing.Annotations == nil {
+		return false
+	}
 	_, ok := ing.Annotations[AnnotationHostname]
 	return ok
 }
@@ -44,6 +47,16 @@ func (n *IngressResource) getNIPHostname(ing *extensions_v1beta1.Ingress) string
 	return ""
 }
 
+func (n *IngressResource) getALBHostname(ing *extensions_v1beta1.Ingress) string {
+	for _, i := range ing.Status.LoadBalancer.Ingress {
+		if i.Hostname != "" {
+			return i.Hostname
+		}
+	}
+	logrus.Warnf("Failed to get ingress /%s/%s resource hostname", ing.Namespace, ing.Name)
+	return ""
+}
+
 func (n *IngressResource) updateHostname(ing *extensions_v1beta1.Ingress) {
 	if ing.Annotations == nil {
 		ing.Annotations = make(map[string]string)
@@ -53,6 +66,8 @@ func (n *IngressResource) updateHostname(ing *extensions_v1beta1.Ingress) {
 		fallthrough
 	case IngressClassNginx:
 		ing.Annotations[AnnotationHostname] = n.getRdnsHostname(ing)
+	case IngressClassALB:
+		ing.Annotations[AnnotationHostname] = n.getALBHostname(ing)
 	case IngressClassGCE:
 		ing.Annotations[AnnotationHostname] = n.getNIPHostname(ing)
 	}
