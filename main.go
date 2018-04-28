@@ -1,15 +1,20 @@
 package main
 
 import (
+	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/niusmallnan/kube-rdns/controller"
-	"github.com/niusmallnan/kube-rdns/healthcheck"
-	"github.com/niusmallnan/kube-rdns/kube"
-	"github.com/niusmallnan/kube-rdns/rdns"
 	"github.com/niusmallnan/kube-rdns/setting"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
+	"k8s.io/apiserver/pkg/server/healthz"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 )
 
 var VERSION = "v0.0.0-dev"
@@ -39,15 +44,15 @@ func main() {
 			Value:  setting.DefaultBaseRdnsURL,
 			EnvVar: "RANCHER_BASE_RDNS_URL",
 		},
-		cli.StringFlag{
+		cli.DurationFlag{
 			Name:   "renew-duration",
 			Value:  setting.DefaultRnewDuration,
 			EnvVar: "RANCHER_RENEW_DURATION",
 		},
-		cli.StringFlag{
-			Name:   "ingress-controller-resync-duration",
-			Value:  setting.DefaultIngressControllerResyncDuration,
-			EnvVar: "RANCHER_INGRESS_CONTROLLER_RESYNC_DURATION",
+		cli.DurationFlag{
+			Name:   "ingress-resync-duration",
+			Value:  setting.DefaultIngressResyncDuration,
+			EnvVar: "RANCHER_INGRESS_RESYNC_DURATION",
 		},
 	}
 	app.Action = func(ctx *cli.Context) {
@@ -64,41 +69,83 @@ func appMain(ctx *cli.Context) error {
 		logrus.SetLevel(logrus.DebugLevel)
 	}
 
-	err := setting.Init(ctx)
+	setting.Init(ctx)
+
+	kubeClient, err := createApiserverClient()
 	if err != nil {
-		return err
+		handleFatalInitError(err)
+	}
+	c := controller.NewRDNSController(kubeClient)
+
+	mux := http.NewServeMux()
+	registerHandlers(ctx.String("listen"), c, mux)
+
+	go handleSigterm(c, func(code int) {
+		os.Exit(code)
+	})
+
+	c.Start()
+
+	return nil
+}
+
+func createApiserverClient() (*kubernetes.Clientset, error) {
+	// creates the in-cluster config
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		return nil, errors.Wrap(err, "Failed to init kube client")
+	}
+	// creates the clientset
+	clientset, err := kubernetes.NewForConfig(config)
+
+	return clientset, err
+}
+
+func handleFatalInitError(err error) {
+	logrus.Fatalf("Error while initializing connection to Kubernetes apiserver. "+
+		"This most likely means that the cluster is misconfigured (e.g., it has "+
+		"invalid apiserver certificates or service accounts configuration). Reason: %s\n"+
+		"Refer to the troubleshooting guide for more information: "+
+		"https://github.com/kubernetes/ingress-nginx/blob/master/docs/troubleshooting.md", err)
+}
+
+type exiter func(code int)
+
+func handleSigterm(rdnsc *controller.RDNSController, exit exiter) {
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, syscall.SIGTERM)
+	<-signalChan
+	logrus.Infof("Received SIGTERM, shutting down")
+
+	exitCode := 0
+	if err := rdnsc.Stop(); err != nil {
+		logrus.Infof("Error during shutdown %v", err)
+		exitCode = 1
 	}
 
-	kubeClient, err := kube.NewClient()
-	if err != nil {
-		return err
+	logrus.Infof("Handled quit, awaiting pod deletion")
+	time.Sleep(10 * time.Second)
+
+	logrus.Infof("Exiting with %v", exitCode)
+	exit(exitCode)
+}
+
+func registerHandlers(listen string, rc *controller.RDNSController, mux *http.ServeMux) {
+	// expose health check endpoint (/healthz)
+	healthz.InstallHandler(mux,
+		healthz.PingHealthz,
+		rc,
+	)
+
+	// TODO: enable pprof
+
+	server := &http.Server{
+		Addr:              listen,
+		Handler:           mux,
+		ReadTimeout:       10 * time.Second,
+		ReadHeaderTimeout: 10 * time.Second,
+		WriteTimeout:      300 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
-	rdnsClient := rdns.NewClient()
-	c := controller.NewController(kubeClient, rdnsClient)
-
-	err = c.RunOnce()
-	if err != nil {
-		logrus.Errorf("Failed to init register rdns: %v", err)
-		return err
-	}
-
-	done := make(chan error)
-
-	go func(done chan<- error) {
-		done <- healthcheck.StartHealthCheck(ctx.String("listen"))
-	}(done)
-
-	//go func(done chan<- error) {
-	//done <- c.RunRenewLoop()
-	//}(done)
-
-	go func(done chan<- error) {
-		done <- c.WatchNginxControllerUpdate()
-	}(done)
-
-	go func(done chan<- error) {
-		done <- c.WatchIngressResource()
-	}(done)
-
-	return <-done
+	logrus.Fatal(server.ListenAndServe())
 }

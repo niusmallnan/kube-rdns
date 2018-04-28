@@ -9,11 +9,14 @@ import (
 	"net/http"
 	"reflect"
 	"sort"
+	"time"
 
+	"github.com/niusmallnan/kube-rdns/controller/k8s"
 	"github.com/niusmallnan/kube-rdns/setting"
 	"github.com/niusmallnan/rdns-server/model"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"k8s.io/client-go/kubernetes"
 )
 
 const (
@@ -32,6 +35,7 @@ func jsonBody(payload interface{}) (io.Reader, error) {
 
 type Client struct {
 	httpClient *http.Client
+	kubeClient *kubernetes.Clientset
 	base       string
 }
 
@@ -73,64 +77,70 @@ func (c *Client) do(req *http.Request) (model.Response, error) {
 	return data, nil
 }
 
-func (c *Client) ApplyDomain(fqdn string, hosts []string) error {
-	d, err := c.GetDomain(fqdn)
+func (c *Client) ApplyDomain(hosts []string) error {
+	if len(hosts) == 0 {
+		return errors.New("Hosts should not be empty")
+	}
+	token, fqdn := k8s.GetTokenAndRootFqdn(c.kubeClient)
+	if fqdn == "" || token == "" {
+		logrus.Debugf("Fqdn %s has not been exist, need to create a new one", fqdn)
+		return c.createDomain(hosts)
+
+	}
+	d, err := c.getDomain(fqdn)
 	if err != nil {
 		return err
-	}
-
-	if d.Fqdn == "" {
-		logrus.Debugf("Fqdn %s has not been exist, need to create a new one", fqdn)
-		return c.CreateDomain(fqdn, hosts)
 	}
 
 	sort.Strings(d.Hosts)
 	sort.Strings(hosts)
 	if !reflect.DeepEqual(d.Hosts, hosts) {
 		logrus.Debugf("Fqdn %s has some changes, need to update", fqdn)
-		return c.UpdateDomain(fqdn, hosts)
+		return c.updateDomain(token, fqdn, hosts)
 	}
 	logrus.Debugf("Fqdn %s has no changes, no need to update", fqdn)
 
 	return nil
 }
 
-func (c *Client) GetDomain(fqdn string) (d model.Domain, err error) {
+func (c *Client) getDomain(fqdn string) (d model.Domain, err error) {
 	url := fmt.Sprintf("%s/domain/%s", c.base, fqdn)
 	req, err := c.request(http.MethodGet, url, nil)
 	if err != nil {
-		return d, errors.Wrap(err, "GetDomain: failed to build a request")
+		return d, errors.Wrap(err, "getDomain: failed to build a request")
 	}
 
 	o, err := c.do(req)
 	if err != nil {
-		return d, errors.Wrap(err, "GetDomain: failed to execute a request")
+		return d, errors.Wrap(err, "getDomain: failed to execute a request")
 	}
 
 	return o.Data, nil
 }
 
-func (c *Client) CreateDomain(fqdn string, hosts []string) error {
+func (c *Client) createDomain(hosts []string) error {
 	url := fmt.Sprintf("%s/domain", c.base)
-	body, err := jsonBody(&model.DomainOptions{Fqdn: fqdn, Hosts: hosts})
+	body, err := jsonBody(&model.DomainOptions{Hosts: hosts})
 	if err != nil {
 		return err
 	}
 
 	req, err := c.request(http.MethodPost, url, body)
 	if err != nil {
-		return errors.Wrap(err, "CreateDomain: failed to build a request")
+		return errors.Wrap(err, "createDomain: failed to build a request")
 	}
 
-	_, err = c.do(req)
+	rep, err := c.do(req)
 	if err != nil {
-		return errors.Wrap(err, "CreateDomain: failed to execute a request")
+		return errors.Wrap(err, "createDomain: failed to execute a request")
 	}
+
+	k8s.SaveTokenAndRootFqdn(c.kubeClient, rep.Token, rep.Data.Fqdn)
 
 	return err
 }
 
-func (c *Client) UpdateDomain(fqdn string, hosts []string) error {
+func (c *Client) updateDomain(token, fqdn string, hosts []string) error {
 	url := fmt.Sprintf("%s/domain/%s", c.base, fqdn)
 	body, err := jsonBody(&model.DomainOptions{Hosts: hosts})
 	if err != nil {
@@ -139,40 +149,33 @@ func (c *Client) UpdateDomain(fqdn string, hosts []string) error {
 
 	req, err := c.request(http.MethodPut, url, body)
 	if err != nil {
-		return errors.Wrap(err, "UpdateDomain: failed to build a request")
+		return errors.Wrap(err, "updateDomain: failed to build a request")
 	}
+
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 
 	_, err = c.do(req)
 	if err != nil {
-		return errors.Wrap(err, "UpdateDomain: failed to execute a request")
+		return errors.Wrap(err, "updateDomain: failed to execute a request")
 	}
 
 	return err
 }
 
-func (c *Client) DeleteDomain(fqdn string) error {
-	url := fmt.Sprintf("%s/domain/%s", c.base, fqdn)
-
-	req, err := c.request(http.MethodDelete, url, nil)
-	if err != nil {
-		return errors.Wrap(err, "DeleteDomain: failed to build a request")
+func (c *Client) RenewDomain() error {
+	token, fqdn := k8s.GetTokenAndRootFqdn(c.kubeClient)
+	if token == "" || fqdn == "" {
+		return errors.New("RenewDomain: failed to get token and fqdn")
 	}
 
-	_, err = c.do(req)
-	if err != nil {
-		return errors.Wrap(err, "DeleteDomain: failed to execute a request")
-	}
-
-	return err
-}
-
-func (c *Client) RenewDomain(fqdn string) error {
 	url := fmt.Sprintf("%s/domain/%s/renew", c.base, fqdn)
 
 	req, err := c.request(http.MethodPut, url, nil)
 	if err != nil {
 		return errors.Wrap(err, "RenewDomain: failed to build a request")
 	}
+
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 
 	_, err = c.do(req)
 	if err != nil {
@@ -182,7 +185,11 @@ func (c *Client) RenewDomain(fqdn string) error {
 	return err
 }
 
-func NewClient() *Client {
-	return &Client{httpClient: http.DefaultClient,
-		base: setting.GetBaseRdnsURL()}
+func NewClient(kubeClient *kubernetes.Clientset) *Client {
+	httpClient := &http.Client{Timeout: 5 * time.Second}
+	return &Client{
+		httpClient: httpClient,
+		kubeClient: kubeClient,
+		base:       setting.GetBaseRdnsURL(),
+	}
 }

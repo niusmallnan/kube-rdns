@@ -3,34 +3,28 @@ package setting
 import (
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/urfave/cli"
 )
 
 const (
-	DefaultRootDomain                      = "rancher.io"
-	DefaultBaseRdnsURL                     = "https://api.rdns.rancher.io/v1"
-	DefaultRnewDuration                    = "24h"
-	DefaultIngressControllerResyncDuration = "5m"
+	DefaultRootDomain            = "lb.rancher.cloud"
+	DefaultBaseRdnsURL           = "http://api.rdns.rancher.cloud/v1"
+	DefaultRnewDuration          = 24 * time.Hour
+	DefaultIngressResyncDuration = 5 * time.Minute
 )
 
 var (
-	rootDomain                      string
-	baseRdnsURL                     string
-	renewDuration                   string
-	ingressControllerResyncDuration time.Duration
+	rootDomain            string
+	baseRdnsURL           string
+	renewDuration         time.Duration
+	ingressResyncDuration time.Duration
 )
 
-func Init(ctx *cli.Context) error {
-	var err error
+func Init(ctx *cli.Context) {
 	rootDomain = ctx.String("root-domain")
 	baseRdnsURL = ctx.String("base-rdns-url")
-	renewDuration = ctx.String("renew-duration")
-	ingressControllerResyncDuration, err = time.ParseDuration(ctx.String("ingress-controller-resync-duration"))
-	if err != nil {
-		return errors.Wrapf(err, "Failed to init ingress-controller-resync-duration")
-	}
-	return nil
+	renewDuration = ctx.Duration("renew-duration")
+	ingressResyncDuration = ctx.Duration("ingress-resync-duration")
 }
 
 func GetRootDomain() string {
@@ -41,10 +35,10 @@ func GetBaseRdnsURL() string {
 	return baseRdnsURL
 }
 
-func GetRenewDuration() string {
+func GetRenewDuration() time.Duration {
 	return renewDuration
 }
 
-func GetIngressControllerResyncDuration() time.Duration {
-	return ingressControllerResyncDuration
+func GetIngressResyncDuration() time.Duration {
+	return ingressResyncDuration
 }
