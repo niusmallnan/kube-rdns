@@ -51,24 +51,29 @@ func (n *IngressResource) sync(ing *extensionsv1beta1.Ingress) {
 	if ing.Annotations == nil {
 		ing.Annotations = make(map[string]string)
 	}
+	fqdn := n.getRdnsHostname(ing)
 	switch ing.Annotations[annotationIngressClass] {
 	case "": // nginx as default
 		fallthrough
 	case ingressClassNginx:
 		ips := n.getIngressIps(ing)
 		if err := n.rdnsClient.ApplyDomain(ips); err == nil {
-			ing.Annotations[annotationHostname] = n.getRdnsHostname(ing)
+			ing.Annotations[annotationHostname] = fqdn
 		} else {
 			logrus.Error(err)
 		}
 	default:
 		logrus.Infof("Do nothing with ingress class %s", ing.Annotations[annotationIngressClass])
 	}
-	if _, err := n.kubeClient.ExtensionsV1beta1().Ingresses(ing.Namespace).Update(ing); err != nil {
-		logrus.Errorf("Failed to update ingress resource annotations: %v", err)
-	}
 
 	// Also need to update rules for hostname when using nginx
+	for _, rule := range ing.Spec.Rules {
+		rule.Host = fqdn
+	}
+
+	if _, err := n.kubeClient.ExtensionsV1beta1().Ingresses(ing.Namespace).Update(ing); err != nil {
+		logrus.Errorf("Failed to update ingress resource: %v", err)
+	}
 }
 
 func (n *IngressResource) WatchResources() {
