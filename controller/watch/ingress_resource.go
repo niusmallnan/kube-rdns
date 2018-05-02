@@ -6,6 +6,7 @@ import (
 	"github.com/niusmallnan/kube-rdns/controller/k8s"
 	"github.com/niusmallnan/kube-rdns/controller/rdns"
 	"github.com/niusmallnan/kube-rdns/setting"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"k8s.io/api/core/v1"
 	extensionsv1beta1 "k8s.io/api/extensions/v1beta1"
@@ -43,6 +44,7 @@ func (n *IngressResource) getIngressIps(ing *extensionsv1beta1.Ingress) []string
 			ips = append(ips, i.IP)
 		}
 	}
+	logrus.Debugf("Got ingress resource ip addresses: %s", ips)
 
 	return ips
 }
@@ -60,7 +62,7 @@ func (n *IngressResource) sync(ing *extensionsv1beta1.Ingress) {
 		if err := n.rdnsClient.ApplyDomain(ips); err == nil {
 			ing.Annotations[annotationHostname] = fqdn
 		} else {
-			logrus.Error(err)
+			logrus.Error(errors.Wrap(err, "Called by ingress watch"))
 		}
 	default:
 		logrus.Infof("Do nothing with ingress class %s", ing.Annotations[annotationIngressClass])

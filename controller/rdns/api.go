@@ -79,7 +79,7 @@ func (c *Client) do(req *http.Request) (model.Response, error) {
 
 func (c *Client) ApplyDomain(hosts []string) error {
 	if len(hosts) == 0 {
-		return errors.New("Hosts should not be empty")
+		return errors.New("ApplyDomain: hosts should not be empty")
 	}
 	token, fqdn := k8s.GetTokenAndRootFqdn(c.kubeClient)
 	if fqdn == "" || token == "" {

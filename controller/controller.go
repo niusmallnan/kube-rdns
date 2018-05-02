@@ -58,7 +58,7 @@ func (c *RDNSController) Start() {
 }
 
 func (c *RDNSController) renewLoop() {
-	logrus.Info("Running renew loop")
+	logrus.Infof("Running renew loop with duration: %s", setting.GetRenewDuration().String())
 	ticker := time.NewTicker(setting.GetRenewDuration())
 	for t := range ticker.C {
 		logrus.Infof("Tick at %s", t.String())
