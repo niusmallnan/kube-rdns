@@ -30,6 +30,7 @@ func NewRDNSController(kubeClient *kubernetes.Clientset) *RDNSController {
 	ingRes := watch.NewIngressResource(kubeClient, rdnsClient)
 	return &RDNSController{
 		rdnsClient: rdnsClient,
+		kubeClient: kubeClient,
 		ingRes:     ingRes,
 	}
 }

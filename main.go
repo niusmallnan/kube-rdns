@@ -78,7 +78,7 @@ func appMain(ctx *cli.Context) error {
 	c := controller.NewRDNSController(kubeClient)
 
 	mux := http.NewServeMux()
-	registerHandlers(ctx.String("listen"), c, mux)
+	go registerHandlers(ctx.String("listen"), c, mux)
 
 	go handleSigterm(c, func(code int) {
 		os.Exit(code)

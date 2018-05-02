@@ -83,7 +83,7 @@ func (c *Client) ApplyDomain(hosts []string) error {
 	}
 	token, fqdn := k8s.GetTokenAndRootFqdn(c.kubeClient)
 	if fqdn == "" || token == "" {
-		logrus.Debugf("Fqdn %s has not been exist, need to create a new one", fqdn)
+		logrus.Debugf("Fqdn for %s has not been exist, need to create a new one", hosts)
 		return c.createDomain(hosts)
 
 	}
