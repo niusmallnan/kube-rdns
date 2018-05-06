@@ -2,6 +2,7 @@ package watch
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/niusmallnan/kube-rdns/controller/k8s"
 	"github.com/niusmallnan/kube-rdns/controller/rdns"
@@ -10,9 +11,11 @@ import (
 	"github.com/sirupsen/logrus"
 	"k8s.io/api/core/v1"
 	extensionsv1beta1 "k8s.io/api/extensions/v1beta1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/client-go/util/workqueue"
 )
 
@@ -50,31 +53,63 @@ func (n *IngressResource) getIngressIps(ing *extensionsv1beta1.Ingress) []string
 }
 
 func (n *IngressResource) sync(ing *extensionsv1beta1.Ingress) {
-	if ing.Annotations == nil {
-		ing.Annotations = make(map[string]string)
-	}
 	fqdn := n.getRdnsHostname(ing)
-	switch ing.Annotations[annotationIngressClass] {
-	case "": // nginx as default
-		fallthrough
-	case ingressClassNginx:
-		ips := n.getIngressIps(ing)
-		if err := n.rdnsClient.ApplyDomain(ips); err == nil {
-			ing.Annotations[annotationHostname] = fqdn
-		} else {
-			logrus.Error(errors.Wrap(err, "Called by ingress watch"))
+
+	retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		// Retrieve the latest version of Ingress before attempting update
+		// RetryOnConflict uses exponential backoff to avoid exhausting the apiserver
+		latestIng, err := n.kubeClient.ExtensionsV1beta1().Ingresses(ing.Namespace).Get(ing.Name, metav1.GetOptions{})
+		if err != nil {
+			logrus.Errorf("Failed to get latest version of ingress: %v", err)
+			return err
 		}
-	default:
-		logrus.Infof("Do nothing with ingress class %s", ing.Annotations[annotationIngressClass])
-	}
 
-	// Also need to update rules for hostname when using nginx
-	for _, rule := range ing.Spec.Rules {
-		rule.Host = fqdn
-	}
+		if latestIng.Annotations == nil {
+			latestIng.Annotations = make(map[string]string)
+		}
+		latestIng = latestIng.DeepCopy()
+		changed := false
 
-	if _, err := n.kubeClient.ExtensionsV1beta1().Ingresses(ing.Namespace).Update(ing); err != nil {
-		logrus.Errorf("Failed to update ingress resource: %v", err)
+		switch latestIng.Annotations[annotationIngressClass] {
+		case "": // nginx as default
+			fallthrough
+		case ingressClassNginx:
+			ips := n.getIngressIps(latestIng)
+			if len(ips) > 0 {
+				changed = true
+				if err := n.rdnsClient.ApplyDomain(ips); err == nil {
+					latestIng.Annotations[annotationHostname] = fqdn
+				} else {
+					logrus.Error(errors.Wrap(err, "Called by ingress watch"))
+					return err
+				}
+			}
+		default:
+			logrus.Infof("Do nothing with ingress class %s", latestIng.Annotations[annotationIngressClass])
+		}
+
+		if !changed {
+			return nil
+		}
+
+		// Also need to update rules for hostname when using nginx
+		for i, rule := range latestIng.Spec.Rules {
+			logrus.Debugf("Got ingress resource hostname: %s", rule.Host)
+			if strings.HasSuffix(rule.Host, setting.GetRootDomain()) {
+				latestIng.Spec.Rules[i].Host = fqdn
+			}
+		}
+
+		_, err = n.kubeClient.ExtensionsV1beta1().Ingresses(latestIng.Namespace).Update(latestIng)
+		if err != nil {
+			logrus.Errorf("Failed to update ingress resource: %v", err)
+		}
+
+		return err
+	})
+
+	if retryErr != nil {
+		logrus.Errorf("Failed to retry to update ingress resource: %v", retryErr)
 	}
 }
 
