@@ -64,11 +64,10 @@ func (n *IngressResource) sync(ing *extensionsv1beta1.Ingress) {
 			return err
 		}
 
+		latestIng = latestIng.DeepCopy()
 		if latestIng.Annotations == nil {
 			latestIng.Annotations = make(map[string]string)
 		}
-		latestIng = latestIng.DeepCopy()
-		changed := false
 
 		switch latestIng.Annotations[annotationIngressClass] {
 		case "": // nginx as default
@@ -76,7 +75,6 @@ func (n *IngressResource) sync(ing *extensionsv1beta1.Ingress) {
 		case ingressClassNginx:
 			ips := n.getIngressIps(latestIng)
 			if len(ips) > 0 {
-				changed = true
 				if err := n.rdnsClient.ApplyDomain(ips); err == nil {
 					latestIng.Annotations[annotationHostname] = fqdn
 				} else {
@@ -88,16 +86,19 @@ func (n *IngressResource) sync(ing *extensionsv1beta1.Ingress) {
 			logrus.Infof("Do nothing with ingress class %s", latestIng.Annotations[annotationIngressClass])
 		}
 
-		if !changed {
-			return nil
-		}
+		changed := false
 
 		// Also need to update rules for hostname when using nginx
 		for i, rule := range latestIng.Spec.Rules {
 			logrus.Debugf("Got ingress resource hostname: %s", rule.Host)
-			if strings.HasSuffix(rule.Host, setting.GetRootDomain()) {
+			if strings.HasSuffix(rule.Host, setting.GetRootDomain()) && rule.Host != fqdn {
 				latestIng.Spec.Rules[i].Host = fqdn
+				changed = true
 			}
+		}
+
+		if !changed {
+			return nil
 		}
 
 		_, err = n.kubeClient.ExtensionsV1beta1().Ingresses(latestIng.Namespace).Update(latestIng)
