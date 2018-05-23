@@ -22,6 +22,7 @@ import (
 const (
 	contentType     = "Content-Type"
 	jsonContentType = "application/json"
+	maxHost         = 10
 )
 
 func jsonBody(payload interface{}) (io.Reader, error) {
@@ -81,6 +82,12 @@ func (c *Client) ApplyDomain(hosts []string) error {
 	if len(hosts) == 0 {
 		return errors.New("ApplyDomain: hosts should not be empty")
 	}
+
+	if len(hosts) > maxHost {
+		logrus.Debugf("hosts number is %d, over %d", len(hosts), maxHost)
+		hosts = hosts[:maxHost]
+	}
+
 	token, fqdn := k8s.GetTokenAndRootFqdn(c.kubeClient)
 	if fqdn == "" || token == "" {
 		logrus.Debugf("Fqdn for %s has not been exist, need to create a new one", hosts)
